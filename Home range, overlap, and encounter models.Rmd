@@ -1,0 +1,1923 @@
+---
+title: "Drought reshapes space use and intraguild overlap in an African large carnivore guild"
+authored by: "Leigh West"
+date: '2023-12-22'
+output: pdf_document
+---
+
+
+This analysis examines if home range size, spatial overlap, and encounters for four large carnivore species (African wild dogs, lions, leopards, and cheetahs) in Botswana changes during drought conditions. Because each individual has different collar deployment lengths, in order to be able to make comparisons between them, I divided the data into monthly time periods in the wet and dry seasons each year. I then fit Brownian Bridge Movement Models to estimate home range area (in km squared) for each individual in each time period between 2011 and 2022 (95% and 50% isopleths). If there were multiple wild dog individuals from the same pack in one time period, I excluded all but one of them because the space use of the Pack is consistent across individuals. If there were multiple same-sex lion individuals in one time period, I excluded individuals with an overlap coefficient of > 0.7. I then estimated home range overlap using Bhattacharyya’s affinity metric, which produces an overlap coefficient between 0 and 1, with 1 representing perfect overlap. I proceed to analyze my data using the below modeling approach.
+
+I used the Standard Precipitation Index (SPI) as a drought metric. I used two lagged SPIs, three months and annual, to test different hypotheses (effect of reduced surface water vs. broader ecologial effects, respectively). 
+
+## Table of Contents
+
+63: Home range models, 3-month Standard Precipitation Index
+373: Home range models, annual Standard Precipitation Index
+923: Overlap models
+1386: Encounter models
+1594: Figures
+
+
+## Load necessary packages 
+
+```{r packages, load packages include = FALSE}
+
+options(stringsAsFactors = FALSE)
+library(tidyverse)
+library(dplyr)
+library(glmmTMB)
+library(DHARMa)
+library(ggeffects)
+library(RColorBrewer)
+library(ggnewscale)
+library(ggspatial)
+library(ggplot2)
+
+```
+
+
+## Read in data
+
+```{r csv files for analysis}
+
+####Home range####
+
+df_HR <- read.csv("home_range_table.csv")
+
+####Overlap####
+
+overlap_95_binom <- read.csv("overlap_95_binom.csv")
+overlap_95_beta <- read.csv("overlap_95_beta.csv")
+overlap_50_binom <- read.csv("overlap_50_binom.csv")
+overlap_50_beta <- read.csv("overlap_50_beta.csv")
+
+####Encounters####
+
+encounters_200m <- read.csv("encounters_200m.csv")
+encounters_400m <- read.csv("encounters_400m.csv")
+
+```
+
+
+## Home range models, three-month SPI 
+
+```{r home range models 3-month}
+
+#Wild dog 95% HR
+dogmod95_HR_3month <- glmmTMB(hr_area ~ threemonth_spi + (1|Pack), data=subset(df_HR, Species=="African Wild Dog" & isopleth=="BB95"), family = Gamma(link="log"))
+summary(dogmod95_HR_3month)
+
+#Wild Dog 50% HR
+dogmod50_HR_3month <- glmmTMB(hr_area ~ threemonth_spi + (1|Pack), data=subset(df_HR, Species=="African Wild Dog" & isopleth=="BB50"), family = Gamma(link="log"))
+summary(dogmod50_HR_3month)
+
+
+#Lion 95% HR
+lionmod95_HR_3month <- glmmTMB(hr_area ~ threemonth_spi + Sex + (1|Pack/id_simple), data=subset(df_HR, Species=="Lion" & isopleth=="BB95"), family = Gamma(link="log"))
+summary(lionmod95_HR_3month)
+
+#Lion 50% HR 
+lionmod50_HR_3month <- glmmTMB(hr_area ~ threemonth_spi + Sex + (1|Pack/id_simple), data=subset(df_HR, Species=="Lion" & isopleth=="BB50"), family = Gamma(link="log"))
+summary(lionmod50_HR_3month)
+
+
+#Leopard 95% HR
+leopardmod95_HR_3month <- glmmTMB(hr_area ~ threemonth_spi + (1|id_simple), data=subset(df_HR, Species=="Leopard" & isopleth=="BB95"), family = Gamma(link="log"))
+summary(leopardmod95_HR_3month)
+
+#Leopard 50% HR 
+leopardmod50_HR_3month <- glmmTMB(hr_area ~ threemonth_spi + (1|id_simple), data=subset(df_HR, Species=="Leopard" & isopleth=="BB50"), family = Gamma(link="log"))
+summary(leopardmod50_HR_3month)
+
+
+#Cheetah 95% HR
+cheetahmod95_HR_3month <- glmmTMB(hr_area ~ threemonth_spi + Sex + (1|id_simple), data=subset(df_HR, Species=="Cheetah" & isopleth=="BB95"), family = Gamma(link="log"))
+summary(cheetahmod95_HR_3month)
+
+#Cheetah 50% HR 
+cheetahmod50_HR_3month <- glmmTMB(hr_area ~ threemonth_spi + Sex + (1|id_simple), data=subset(df_HR, Species=="Cheetah" & isopleth=="BB50"), family = Gamma(link="log"))
+summary(cheetahmod50_HR_3month)
+
+
+```
+
+
+## Bootstrap confidence intervals for each model
+
+```{r Bootstrap CIs 3-month home range models}
+
+#Wild dog 95% home range
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,2,nb) 
+for(i in 1:nb){
+  ynew <- unlist(simulate(dogmod95_HR_3month))
+  bmod <- update(dogmod95_HR_3month, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[,1]
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_dog95_3month <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#Wild dog 50% home range
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,2,nb) 
+for(i in 1:nb){
+  ynew <- unlist(simulate(dogmod50_HR_3month))
+  bmod <- update(dogmod50_HR_3month, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[,1]
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_dog50_3month <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+
+#Lion 95% home range
+#A 'while loop' is used instead of a 'for loop' in order to exclude model runs with convergence errors
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA, 2, nb)
+i <- 1
+
+while (i <= nb) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(lionmod95_HR_3month))
+    bmod <- update(lionmod95_HR_3month, ynew ~ .)
+    coefmat[, i] <- summary(bmod)$coefficients$cond[1:2, 1]
+    i <- i + 1  # Only increment i if the iteration is successful
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[1:2,1])
+coefmat <- data.frame(coefmat)
+CIs_lion95_3month <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#Lion 50% home range
+#A 'while loop' is used instead of a 'for loop' in order to exclude model runs with convergence errors
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA, 2, nb)
+i <- 1
+
+while (i <= nb) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(lionmod50_HR_3month))
+    bmod <- update(lionmod50_HR_3month, ynew ~ .)
+    coefmat[, i] <- summary(bmod)$coefficients$cond[1:2, 1]
+    i <- i + 1  # Only increment i if the iteration is successful
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[1:2,1])
+coefmat <- data.frame(coefmat)
+CIs_lion50_3month <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+
+#Leopard 95% home range
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,2,nb) 
+for(i in 1:nb){
+  ynew <- unlist(simulate(leopardmod95_HR_3month))
+  bmod <- update(leopardmod95_HR_3month, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[,1]
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_leopard95_3month <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#Leopard 50% home range
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,2,nb) 
+for(i in 1:nb){
+  ynew <- unlist(simulate(leopardmod50_HR_3month))
+  bmod <- update(leopardmod50_HR_3month, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[,1]
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_leopard50_3month <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+
+#Cheetah 95% home range
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,2,nb) 
+for(i in 1:nb){
+  ynew <- unlist(simulate(cheetahmod95_HR_3month))
+  bmod <- update(cheetahmod95_HR_3month, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[1:2,1]
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[1:2,1])
+coefmat <- data.frame(coefmat)
+CIs_cheetah95_3month <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#Cheetah 50% home range
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,2,nb) 
+for(i in 1:nb){
+  ynew <- unlist(simulate(cheetahmod50_HR_3month))
+  bmod <- update(cheetahmod50_HR_3month, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[1:2,1]
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[1:2,1])
+coefmat <- data.frame(coefmat)
+CIs_cheetah50_3month <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+``` 
+
+
+## Predicting from models and bootstrap CIs on predictions
+
+```{r predictions and CIs 3-month home range models}
+
+#Wild dog 95% HR
+
+#Creating new data set to predict from where x values are bounded by minimum and maximum SPI values found in observed data
+original_vec <- c(-1.2, 0, 1.7)
+spi_values_new <- seq(original_vec[1], original_vec[length(original_vec)], by = 0.1)
+spi_values_new_rounded <- round(spi_values_new, digits = 2)
+
+data.n <- data.frame(threemonth_spi = spi_values_new_rounded)
+
+set.seed(1)
+boots <- 1000
+yest <- matrix(NA,nrow(data.n),ncol=boots)
+for(i in 1:boots){
+  ynew <- unlist(simulate(dogmod95_HR_3month))
+  ymod <- update(dogmod95_HR_3month,ynew ~ .)
+  RE.sd <- sqrt(VarCorr(ymod)$cond$Pack[1]) 
+  yest[,i] <- exp(predict(ymod, re.form = ~0, newdata = data.n) + rnorm(1,0,RE.sd))  #for log link 
+}
+
+#this will give me the mean and the confidence intervals for each of my input variable levels 
+mean_pred_dog95_3month <- apply(yest,1,mean)
+pred_dog95_3month <- cbind(data.n, mean_pred_dog95_3month)
+CIs_pred_dog95_3month <- apply(yest,1,function(x){quantile(x,probs=c(0.025,0.975))})
+
+
+
+#Wild dog 50% HR
+
+data.n <- data.frame(threemonth_spi = spi_values_new_rounded)
+
+set.seed(1)
+boots <- 1000
+yest <- matrix(NA,nrow(data.n),ncol=boots)
+for(i in 1:boots){
+  ynew <- unlist(simulate(dogmod50_HR_3month))
+  ymod <- update(dogmod50_HR_3month,ynew ~ .)
+  RE.sd <- sqrt(VarCorr(ymod)$cond$Pack[1]) 
+  yest[,i] <- exp(predict(ymod, re.form = ~0, newdata = data.n) + rnorm(1,0,RE.sd))  #for log link 
+}
+
+#this will give me the mean and the confidence intervals for each of my input variable levels 
+mean_pred_dog50_3month <- apply(yest,1,mean)
+pred_dog50_3month <- cbind(data.n, mean_pred_dog50_3month)
+CIs_pred_dog50_3month <- apply(yest,1,function(x){quantile(x,probs=c(0.025,0.975))})
+
+
+```
+
+
+## Diagnostic plots for home range models, three-month SPI
+
+For some of these models, significant deviations were detected in my plot of residual vs. predicated values, indicating I violated the assumption of identically distributed errors. Overall, I thought the diagnostic plots looked reliable enough to move forward with making inference from these models.
+
+```{r DHARMa plots 3-month home range models}
+
+#Wild dog 95% HR
+dogmod95_HR_3month_simres <- simulateResiduals(dogmod95_HR_3month)
+plot(dogmod95_HR_3month_simres)
+
+#Wild Dog 50% HR
+dogmod50_HR_3month_simres <- simulateResiduals(dogmod50_HR_3month)
+plot(dogmod50_HR_3month_simres)
+
+
+#Lion 95% HR
+lionmod95_HR_3month_simres <- simulateResiduals(lionmod95_HR_3month)
+plot(lionmod95_HR_3month_simres)
+
+#Lion 50% HR 
+lionmod50_HR_3month_simres <- simulateResiduals(lionmod50_HR_3month)
+plot(lionmod50_HR_3month_simres)
+
+
+#Leopard 95% HR
+leopardmod95_HR_3month_simres <- simulateResiduals(leopardmod95_HR_3month)
+plot(leopardmod95_HR_3month_simres)
+
+#Leopard 50% HR 
+leopardmod50_HR_3month_simres <- simulateResiduals(leopardmod50_HR_3month)
+plot(leopardmod50_HR_3month_simres)
+
+
+#Cheetah 95% HR
+cheetahmod95_HR_3month_simres <- simulateResiduals(cheetahmod95_HR_3month)
+plot(cheetahmod95_HR_3month_simres)
+
+#Cheetah 50% HR 
+cheetahmod50_HR_3month_simres <- simulateResiduals(cheetahmod50_HR_3month)
+plot(cheetahmod50_HR_3month_simres)
+
+```
+
+
+## Home range models, annual SPI 
+
+```{r home range models annual}
+
+#Wild dog 95% HR
+dogmod95_HR_annual <- glmmTMB(hr_area ~ prevyear_spi + (1|Pack), data=subset(df_HR, Species=="African Wild Dog" & isopleth=="BB95"), family = Gamma(link="log"))
+summary(dogmod95_HR_annual)
+
+#Wild Dog 50% HR
+dogmod50_HR_annual <- glmmTMB(hr_area ~ prevyear_spi + (1|Pack), data=subset(df_HR, Species=="African Wild Dog" & isopleth=="BB50"), family = Gamma(link="log"))
+summary(dogmod50_HR_annual)
+
+
+#Lion 95% HR
+lionmod95_HR_annual <- glmmTMB(hr_area ~ prevyear_spi + Sex + (1|Pack/id_simple), data=subset(df_HR, Species=="Lion" & isopleth=="BB95"), family = Gamma(link="log"))
+summary(lionmod95_HR_annual)
+
+#Lion 50% HR 
+lionmod50_HR_annual <- glmmTMB(hr_area ~ prevyear_spi + Sex + (1|Pack/id_simple), data=subset(df_HR, Species=="Lion" & isopleth=="BB50"), family = Gamma(link="log"))
+summary(lionmod50_HR_annual)
+
+
+#Leopard 95% HR
+leopardmod95_HR_annual <- glmmTMB(hr_area ~ prevyear_spi + (1|id_simple), data=subset(df_HR, Species=="Leopard" & isopleth=="BB95"), family = Gamma(link="log"))
+summary(leopardmod95_HR_annual)
+
+#Leopard 50% HR 
+leopardmod50_HR_annual <- glmmTMB(hr_area ~ prevyear_spi + (1|id_simple), data=subset(df_HR, Species=="Leopard" & isopleth=="BB50"), family = Gamma(link="log"))
+summary(leopardmod50_HR_annual)
+
+
+#Cheetah 95% HR
+cheetahmod95_HR_annual <- glmmTMB(hr_area ~ prevyear_spi + Sex + (1|id_simple), data=subset(df_HR, Species=="Cheetah" & isopleth=="BB95"), family = Gamma(link="log"))
+summary(cheetahmod95_HR_annual)
+
+#Cheetah 50% HR 
+cheetahmod50_HR_annual <- glmmTMB(hr_area ~ prevyear_spi + Sex + (1|id_simple), data=subset(df_HR, Species=="Cheetah" & isopleth=="BB50"), family = Gamma(link="log"))
+summary(cheetahmod50_HR_annual)
+
+```
+
+
+## Bootstrap confidence intervals for each model
+
+```{r bootstrap CIs annual home range models}
+
+#Wild dog 95% home range
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,2,nb) 
+for(i in 1:nb){
+  ynew <- unlist(simulate(dogmod95_HR_annual))
+  bmod <- update(dogmod95_HR_annual, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[,1]
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_dog95_annual <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#Wild dog 50% home range
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,2,nb) 
+for(i in 1:nb){
+  ynew <- unlist(simulate(dogmod50_HR_annual))
+  bmod <- update(dogmod50_HR_annual, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[,1]
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_dog50_annual <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+
+#Lion 95% home range
+
+#A 'while loop' is used instead of a 'for loop' in order to exclude model runs with convergence errors
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA, 2, nb)
+i <- 1
+
+while (i <= nb) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(lionmod95_HR_annual))
+    bmod <- update(lionmod95_HR_annual, ynew ~ .)
+    coefmat[, i] <- summary(bmod)$coefficients$cond[1:2, 1]
+    i <- i + 1  # Only increment i if the iteration is successful
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[1:2,1])
+coefmat <- data.frame(coefmat)
+CIs_lion95_annual <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#Lion 50% home range
+#A 'while loop' is used instead of a 'for loop' in order to exclude model runs with convergence errors
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA, 2, nb)
+i <- 1
+
+while (i <= nb) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(lionmod50_HR_annual))
+    bmod <- update(lionmod50_HR_annual, ynew ~ .)
+    coefmat[, i] <- summary(bmod)$coefficients$cond[1:2, 1]
+    i <- i + 1  # Only increment i if the iteration is successful
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[1:2,1])
+coefmat <- data.frame(coefmat)
+CIs_lion50_annual <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+
+#Leopard 95% home range
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,2,nb) 
+for(i in 1:nb){
+  ynew <- unlist(simulate(leopardmod95_HR_annual))
+  bmod <- update(leopardmod95_HR_annual, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[,1]
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_leopard95_annual <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#Leopard 50% home range
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,2,nb) 
+for(i in 1:nb){
+  ynew <- unlist(simulate(leopardmod50_HR_annual))
+  bmod <- update(leopardmod50_HR_annual, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[,1]
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_leopard50_annual <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+
+#Cheetah 95% home range
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,2,nb) 
+for(i in 1:nb){
+  ynew <- unlist(simulate(cheetahmod95_HR_annual))
+  bmod <- update(cheetahmod95_HR_annual, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[1:2,1]
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[1:2,1])
+coefmat <- data.frame(coefmat)
+CIs_cheetah95_annual <-t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#Cheetah 50% home range
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,2,nb) 
+for(i in 1:nb){
+  ynew <- unlist(simulate(cheetahmod50_HR_annual))
+  bmod <- update(cheetahmod50_HR_annual, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[1:2,1]
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[1:2,1])
+coefmat <- data.frame(coefmat)
+CIs_cheetah50_annual <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+``` 
+
+
+## Predicting from models and bootstrap CIs on predictions
+
+```{r model predictions and CIs annual home range models}
+
+#Lion 95% HR
+#A 'while loop' is used instead of a 'for loop' in order to exclude model runs with convergence errors
+
+data.n <- data.frame(prevyear_spi = rep(spi_values_new_rounded,2),Sex = c(rep("M",30),rep("F",30)))
+
+set.seed(1)
+boots <- 1000
+yest <- matrix(NA,nrow(data.n),ncol=boots)
+i <- 1
+while (i <= boots) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(lionmod95_HR_annual))
+    ymod <- update(lionmod95_HR_annual, ynew ~ .)
+    RE.sd <- sqrt(VarCorr(ymod)$cond$`id_simple:Pack`[1])
+    exp_pred <- exp(predict(ymod, re.form = ~0, allow.new.levels = TRUE, newdata = data.n) + rnorm(1, 0, RE.sd))
+    
+    if (!any(is.na(exp_pred))) {
+      yest[, i] <- exp_pred
+      i <- i + 1  # Only increment i if the iteration is successful
+    }
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+  
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+mean_pred_lion95_annual <- apply(yest,1,mean)
+pred_lion95_annual <- cbind(data.n, mean_pred_lion95_annual)
+CIs_pred_lion95_annual <- apply(yest,1,function(x){quantile(x,probs=c(0.025,0.975))})
+
+#Lion 50% HR
+#A 'while loop' is used instead of a 'for loop' in order to exclude model runs with convergence errors
+
+data.n <- data.frame(prevyear_spi = rep(spi_values_new_rounded,2),Sex = c(rep("M",30),rep("F",30)))
+
+set.seed(1)
+boots <- 1000
+yest <- matrix(NA,nrow(data.n),ncol=boots)
+i <- 1
+while (i <= boots) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(lionmod50_HR_annual))
+    ymod <- update(lionmod50_HR_annual, ynew ~ .)
+    RE.sd <- sqrt(VarCorr(ymod)$cond$`id_simple:Pack`[1])
+    exp_pred <- exp(predict(ymod, re.form = ~0, allow.new.levels = TRUE, newdata = data.n) + rnorm(1, 0, RE.sd))
+    
+    if (!any(is.na(exp_pred))) {
+      yest[, i] <- exp_pred
+      i <- i + 1  # Only increment i if the iteration is successful
+    }
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+  
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+mean_pred_lion50_annual <- apply(yest,1,mean)
+pred_lion50_annual <- cbind(data.n, mean_pred_lion50_annual)
+CIs_pred_lion50_annual <- apply(yest,1,function(x){quantile(x,probs=c(0.025,0.975))})
+
+
+#Leopard 95% HR
+
+data.n <- data.frame(prevyear_spi = spi_values_new_rounded)
+
+set.seed(1)
+boots <- 1000
+yest <- matrix(NA,nrow(data.n),ncol=boots)
+for(i in 1:boots){
+  ynew <- unlist(simulate(leopardmod95_HR_annual))
+  ymod <- update(leopardmod95_HR_annual,ynew ~ .)
+  RE.sd <- sqrt(VarCorr(ymod)$cond$`id_simple`[1])
+  yest[,i] <- exp(predict(ymod, re.form = ~0, allow.new.levels = TRUE, newdata = data.n) + rnorm(1,0,RE.sd)) 
+}
+
+mean_pred_leopard95_annual <- apply(yest,1,mean)
+pred_leopard95_annual <- cbind(data.n, mean_pred_leopard95_annual)
+CIs_pred_leopard95_annual <- apply(yest,1,function(x){quantile(x,probs=c(0.025,0.975))})
+
+
+#Leopard 50% HR
+
+data.n <- data.frame(prevyear_spi = spi_values_new_rounded)
+
+set.seed(1)
+boots <- 1000
+yest <- matrix(NA,nrow(data.n),ncol=boots)
+for(i in 1:boots){
+  ynew <- unlist(simulate(leopardmod50_HR_annual))
+  ymod <- update(leopardmod50_HR_annual,ynew ~ .)
+  RE.sd <- sqrt(VarCorr(ymod)$cond$`id_simple`[1])
+  yest[,i] <- exp(predict(ymod, re.form = ~0, allow.new.levels = TRUE, newdata = data.n) + rnorm(1,0,RE.sd)) 
+}
+
+mean_pred_leopard50_annual <- apply(yest,1,mean)
+pred_leopard50_annual <- cbind(data.n, mean_pred_leopard50_annual)
+CIs_pred_leopard50_annual <- apply(yest,1,function(x){quantile(x,probs=c(0.025,0.975))})
+
+
+```
+
+
+## Diagnostic plots for home range models, annual SPI
+
+For some of these models, significant deviations were detected in my plot of residual vs. predicated values, indicating I violated the assumption of identically distributed errors. Overall, I thought the diagnostic plots looked reliable enough to move forward with making inference from these models.
+
+```{r DHARMa plots annual home range models}
+
+#Wild dog 95% HR
+dogmod95_HR_annual_simres <- simulateResiduals(dogmod95_HR_annual)
+plot(dogmod95_HR_annual_simres)
+
+#Wild Dog 50% HR
+dogmod50_HR_annual_simres <- simulateResiduals(dogmod50_HR_annual)
+plot(dogmod50_HR_annual_simres)
+
+
+#Lion 95% HR
+lionmod95_HR_annual_simres <- simulateResiduals(lionmod95_HR_annual)
+plot(lionmod95_HR_annual_simres)
+
+#Lion 50% HR 
+lionmod50_HR_annual_simres <- simulateResiduals(lionmod50_HR_annual)
+plot(lionmod50_HR_annual_simres)
+
+
+#Leopard 95% HR
+leopardmod95_HR_annual_simres <- simulateResiduals(leopardmod95_HR_annual)
+plot(leopardmod95_HR_annual_simres)
+
+#Leopard 50% HR 
+leopardmod50_HR_annual_simres <- simulateResiduals(leopardmod50_HR_annual)
+plot(leopardmod50_HR_annual_simres)
+
+
+#Cheetah 95% HR
+cheetahmod95_HR_annual_simres <- simulateResiduals(cheetahmod95_HR_annual)
+plot(cheetahmod95_HR_annual_simres)
+
+#Cheetah 50% HR 
+cheetahmod50_HR_annual_simres <- simulateResiduals(cheetahmod50_HR_annual)
+plot(cheetahmod50_HR_annual_simres)
+
+```
+
+
+## Test for temporal autocorrelation in home range models
+
+```{r acf() function 3-month and annual home range models}
+
+acf(resid(dogmod95_HR_3month))
+acf(resid(dogmod95_HR_annual))
+acf(resid(dogmod50_HR_3month))
+acf(resid(dogmod50_HR_annual))
+
+
+acf(resid(lionmod95_HR_3month))
+acf(resid(lionmod95_HR_annual))
+acf(resid(lionmod50_HR_3month))
+acf(resid(lionmod50_HR_annual))
+
+
+acf(resid(leopardmod95_HR_3month))
+acf(resid(leopardmod95_HR_annual))
+acf(resid(leopardmod50_HR_3month))
+acf(resid(leopardmod50_HR_annual))
+
+
+acf(resid(cheetahmod95_HR_3month))
+acf(resid(cheetahmod95_HR_annual))
+acf(resid(cheetahmod50_HR_3month))
+acf(resid(cheetahmod50_HR_annual))
+
+```
+
+
+## Calculate percent change in home range across most extreme SPI values
+
+Percent change between home range sizes at the 25th and 75th SPI percentiles.
+
+25th percentile SPI value = -0.5
+75th percentile SPI value = 1
+
+```{r percent change in home range models with significant results}
+
+#Wild dog
+
+#95%
+twentyfive_percentile_dog95_HR_3month_predictions <- subset(pred_dog95_3month, threemonth_spi == -0.5)
+#244.0326
+
+seventyfive_percentile_dog95_HR_3month_predictions <- subset(pred_dog95_3month, threemonth_spi == 1)
+#180.0469
+
+#Percent change dog 95
+((twentyfive_percentile_dog95_HR_3month_predictions[,2] - seventyfive_percentile_dog95_HR_3month_predictions[,2]) / seventyfive_percentile_dog95_HR_3month_predictions[,2])*100
+#35.53835
+
+#50%
+twentyfive_percentile_dog50_HR_3month_predictions <- subset(pred_dog50_3month, threemonth_spi == -0.5)
+#31.83327
+
+seventyfive_percentile_dog50_HR_3month_predictions <- subset(pred_dog50_3month, threemonth_spi == 1)
+#19.344
+
+#Percent change dog 50
+((twentyfive_percentile_dog50_HR_3month_predictions[,2] - seventyfive_percentile_dog50_HR_3month_predictions[,2]) / seventyfive_percentile_dog50_HR_3month_predictions[,2])*100
+#64.56405
+
+#Lion
+
+#95%
+twentyfive_percentile_lion95_HR_3month_predictions <- subset(pred_lion95_annual, prevyear_spi == -0.5)
+#Male: 117.52595
+#Female: 81.89874
+
+seventyfive_percentile_lion95_HR_3month_predictions <- subset(pred_lion95_annual, prevyear_spi == 1)
+#Male: 76.67691
+#Female: 53.37165
+
+#Percent change lion 95
+
+#Male
+((twentyfive_percentile_lion95_HR_3month_predictions[1,3] - seventyfive_percentile_lion95_HR_3month_predictions[1,3]) / seventyfive_percentile_lion95_HR_3month_predictions[1,3])*100
+#53.27424
+
+#Female
+((twentyfive_percentile_lion95_HR_3month_predictions[2,3] - seventyfive_percentile_lion95_HR_3month_predictions[2,3]) / seventyfive_percentile_lion95_HR_3month_predictions[2,3])*100
+
+#53.44989
+
+#50%
+twentyfive_percentile_lion50_HR_3month_predictions <- subset(pred_lion50_annual, prevyear_spi == -0.5)
+#Male: 9.814067
+#Female: 8.231975
+
+seventyfive_percentile_lion50_HR_3month_predictions <- subset(pred_lion50_annual, prevyear_spi == 1)
+#Male: 7.376284
+#Female: 6.171774
+
+
+#Percent change lion 50
+
+#Male
+((twentyfive_percentile_lion50_HR_3month_predictions[1,3] - seventyfive_percentile_lion50_HR_3month_predictions[1,3]) / seventyfive_percentile_lion50_HR_3month_predictions[1,3])*100
+#33.04893
+
+#Female
+((twentyfive_percentile_lion50_HR_3month_predictions[2,3] - seventyfive_percentile_lion50_HR_3month_predictions[2,3]) / seventyfive_percentile_lion50_HR_3month_predictions[2,3])*100
+#33.38102
+
+#Leopard
+
+#95%
+twentyfive_percentile_leopard95_HR_3month_predictions <- subset(pred_leopard95_annual, prevyear_spi == -0.5)
+#71.38628
+
+seventyfive_percentile_leopard95_HR_3month_predictions <- subset(pred_leopard95_annual, prevyear_spi == 1)
+#42.93292
+
+#Percent change leopard 95
+((twentyfive_percentile_leopard95_HR_3month_predictions[,2] - seventyfive_percentile_leopard95_HR_3month_predictions[,2]) / seventyfive_percentile_leopard95_HR_3month_predictions[,2])*100
+#66.27399
+
+#50%
+twentyfive_percentile_leopard50_HR_3month_predictions <- subset(pred_leopard50_annual, prevyear_spi == -0.5)
+#13.42828
+
+seventyfive_percentile_leopard50_HR_3month_predictions <- subset(pred_leopard50_annual, prevyear_spi == 1)
+#4.08824
+
+
+#Percent change leopard 50
+((twentyfive_percentile_leopard50_HR_3month_predictions[,2] - seventyfive_percentile_leopard50_HR_3month_predictions[,2]) / seventyfive_percentile_leopard50_HR_3month_predictions[,2])*100
+#228.4611
+
+
+```
+
+
+## Calculate predicted home range at SPI = 0 ('average' conditions) for significant results
+
+```{r home range size during average conditions}
+
+#Wild dog 3-month SPI
+
+#95%
+HR_dog95_avg_conditions <- subset(pred_dog95_3month, threemonth_spi == 0)
+#220.3813
+
+#50%
+HR_dog50_avg_conditions <- subset(pred_dog50_3month, threemonth_spi == 0)
+#26.92303
+
+#Lion annual SPI
+
+#95%
+HR_lion95_avg_conditions <- subset(pred_lion95_annual, prevyear_spi == 0)
+#Male - 101.81612
+#Female - 70.92368
+
+#50%
+HR_lion50_avg_conditions <- subset(pred_lion50_annual, prevyear_spi == 0)
+#Male - 8.899139
+#Female - 7.458075
+
+#Leopard annual SPI
+
+#95%
+HR_leopard95_avg_conditions <- subset(pred_leopard95_annual, prevyear_spi == 0)
+#59.95194
+
+#50%
+HR_leopard50_avg_conditions <- subset(pred_leopard50_annual, prevyear_spi == 0)
+#8.924351
+
+```
+
+
+## Overlap models (mixture model; bernoulli & beta distributions)
+
+My overlap models are mixture models, with each treatment (SPI / isopleth combo) having a bernoulli model to test a binary response of was there (1) or was there not (0) overlap between two species, and a beta model to test whether, for those species that had overlap > 0, SPI had an effect on degree of overlap.
+
+```{r overlap models 3-month}
+
+#Overlap of 95% home ranges
+
+#Bernoulli model
+allsp95_overlap_3month_binom <- glmmTMB(overlap_binary ~ dyad_species + threemonth_spi:dyad_species + (1|dyad_id), data=overlap_95_binom, family = binomial(link = "logit"))
+summary(allsp95_overlap_3month_binom)
+
+#Beta model
+allsp95_overlap_3month_beta <- glmmTMB(overlap ~ dyad_species + threemonth_spi:dyad_species + (1|dyad_id), data=overlap_95_beta, family = beta_family(link = "logit"))
+summary(allsp95_overlap_3month_beta)
+
+
+#Overlap of 50% home ranges
+
+#Bernoulli model
+allsp50_overlap_3month_binom <- glmmTMB(overlap_binary ~ dyad_species + threemonth_spi:dyad_species + (1|dyad_id), data=overlap_50_binom, binomial(link = "logit"))
+summary(allsp50_overlap_3month_binom)
+
+#Beta model
+allsp50_overlap_3month_beta <- glmmTMB(overlap ~ dyad_species + threemonth_spi:dyad_species + (1|dyad_id), data=overlap_50_beta, family = beta_family(link = "logit"))
+summary(allsp50_overlap_3month_beta)
+
+
+```
+
+
+```{r overlap models annual}
+
+#Overlap of 95% home ranges
+
+#Bernoulli model
+allsp95_overlap_annual_binom <- glmmTMB(overlap_binary ~ dyad_species + prevyear_spi:dyad_species + (1|dyad_id), data=overlap_95_binom, family = binomial(link = "logit"))
+summary(allsp95_overlap_annual_binom)
+
+#Beta model
+allsp95_overlap_annual_beta <- glmmTMB(overlap ~ dyad_species + prevyear_spi:dyad_species + (1|dyad_id), data=overlap_95_beta, family = beta_family(link = "logit"))
+summary(allsp95_overlap_annual_beta)
+
+
+#Overlap of 50% home ranges
+
+#Bernoulli model
+allsp50_overlap_annual_binom <- glmmTMB(overlap_binary ~ dyad_species + prevyear_spi:dyad_species + (1|dyad_id), data=overlap_50_binom, family = binomial(link = "logit"))
+summary(allsp50_overlap_annual_binom)
+
+#Beta model
+allsp50_overlap_annual_beta <- glmmTMB(overlap ~ dyad_species + prevyear_spi:dyad_species + (1|dyad_id), data=overlap_50_beta, family = beta_family(link = "logit"))
+summary(allsp50_overlap_annual_beta)
+
+```
+
+
+## Bootstrap confidence intervals for each model
+
+```{r Bootstrap CIs overlap models}
+
+#3-month SPI
+
+#95% home range overlap bernoulli
+#A 'while loop' is used instead of a 'for loop' in order to exclude model runs with convergence errors
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,12,nb) 
+i <- 1
+
+while (i <= nb) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(allsp95_overlap_3month_binom))[1:nrow(overlap_95_binom)] 
+    bmod <- update(allsp95_overlap_3month_binom, ynew ~ .) 
+    coefmat[,i] <- summary(bmod)$coefficients$cond[,1] 
+    i <- i + 1  # Only increment i if the iteration is successful
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_95_3monthBinom <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#95% home range overlap beta
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,12,nb) #Not sure what to put as second argument here
+for(i in 1:nb){
+  ynew <- unlist(simulate(allsp95_overlap_3month_beta))[1:nrow(overlap_95_beta)] 
+  bmod <- update(allsp95_overlap_3month_beta, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[,1] 
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_95_3monthBeta <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#50% home range overlap bernoulli
+#A 'while loop' is used instead of a 'for loop' in order to exclude model runs with convergence errors
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,10,nb) 
+i <- 1
+
+while (i <= nb) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(allsp50_overlap_3month_binom))[1:nrow(overlap_50_binom)] 
+    bmod <- update(allsp50_overlap_3month_binom, ynew ~ .) 
+    coefmat[,i] <- summary(bmod)$coefficients$cond[,1]  
+    i <- i + 1  # Only increment i if the iteration is successful
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_50_3monthBinom <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#50% home range overlap beta
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,6,nb) #Not sure what to put as second argument here
+for(i in 1:nb){
+  ynew <- unlist(simulate(allsp50_overlap_3month_beta))[1:nrow(overlap_50_beta)] 
+  bmod <- update(allsp50_overlap_3month_beta, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[,1] 
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_50_3monthBeta <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+
+#Annual SPI
+
+
+#95% home range overlap bernoulli
+#A 'while loop' is used instead of a 'for loop' in order to exclude model runs with convergence errors
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,12,nb) 
+i <- 1
+
+while (i <= nb) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(allsp95_overlap_annual_binom))[1:nrow(overlap_95_binom)] 
+    bmod <- update(allsp95_overlap_annual_binom, ynew ~ .) 
+    coefmat[,i] <- summary(bmod)$coefficients$cond[,1] 
+    i <- i + 1  # Only increment i if the iteration is successful
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_95_annualBinom <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#95% home range overlap beta
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,12,nb) #Not sure what to put as second argument here
+for(i in 1:nb){
+  ynew <- unlist(simulate(allsp95_overlap_annual_beta))[1:nrow(overlap_95_beta)] 
+  bmod <- update(allsp95_overlap_annual_beta, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[,1] 
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_95_annualBeta <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#50% home range overlap bernoulli
+#A 'while loop' is used instead of a 'for loop' in order to exclude model runs with convergence errors
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,10,nb) 
+i <- 1
+
+while (i <= nb) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(allsp50_overlap_annual_binom))[1:nrow(overlap_50_binom)] 
+    bmod <- update(allsp50_overlap_annual_binom, ynew ~ .) 
+    coefmat[,i] <- summary(bmod)$coefficients$cond[,1] 
+    i <- i + 1  # Only increment i if the iteration is successful
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_50_annualBinom <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#50% home range overlap beta
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,6,nb) #Not sure what to put as second argument here
+for(i in 1:nb){
+  ynew <- unlist(simulate(allsp50_overlap_annual_beta))[1:nrow(overlap_50_beta)] 
+  bmod <- update(allsp50_overlap_annual_beta, ynew ~ .) 
+  coefmat[,i] <- summary(bmod)$coefficients$cond[,1] 
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])
+coefmat <- data.frame(coefmat)
+CIs_50_annualBeta <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+``` 
+
+
+## Predictions and CIs
+
+```{r model predictions and CIs overlap models}
+
+##Annual SPI
+
+#95% Overlap annual beta
+
+#Creating dataframe to populate
+data.n.dle <- data.frame(dyad_species = "Dog-Leopard", prevyear_spi = spi_values_new_rounded)
+data.n.cli <- data.frame(dyad_species = "Cheetah-Lion", prevyear_spi = spi_values_new_rounded)
+data.n.dli <- data.frame(dyad_species = "Dog-Lion", prevyear_spi = spi_values_new_rounded)
+data.n.cd <- data.frame(dyad_species = "Cheetah-Dog", prevyear_spi = spi_values_new_rounded)
+data.n.cle <- data.frame(dyad_species = "Cheetah-Leopard", prevyear_spi = spi_values_new_rounded)
+data.n.leli <- data.frame(dyad_species = "Leopard-Lion", prevyear_spi = spi_values_new_rounded)
+data.n <- rbind(data.n.dle, data.n.cli, data.n.dli, data.n.cd, data.n.cle, data.n.leli)
+
+
+set.seed(1)
+boots <- 1000
+yest <- matrix(NA,nrow(data.n),ncol=boots)
+for(i in 1:boots){
+  ynew <- unlist(simulate(allsp95_overlap_annual_beta))
+  ymod <- update(allsp95_overlap_annual_beta,ynew ~ .)
+  RE.sd <- sqrt(VarCorr(ymod)$cond$dyad_id[1]) 
+  yest[,i] <- 1/ (1+exp(-(predict(ymod, re.form = ~0, newdata = data.n) + rnorm(1,0,RE.sd))))
+}
+
+
+
+#this will give me the mean and the confidence intervals for each of my input variable levels 
+mean_pred_overlap95_beta_annual <- apply(yest,1,mean)
+pred_overlap95_beta_annual <- cbind(data.n, mean_pred_overlap95_beta_annual)
+CIs_pred_overlap95_beta_annual <- apply(yest,1,function(x){quantile(x,probs=c(0.025,0.975))})
+
+
+
+#50% Overlap annual beta
+
+#Creating dataframe to populate
+data.n.cli <- data.frame(dyad_species = "Cheetah-Lion", prevyear_spi = spi_values_new_rounded)
+data.n.dli <- data.frame(dyad_species = "Dog-Lion", prevyear_spi = spi_values_new_rounded)
+data.n.leli <- data.frame(dyad_species = "Leopard-Lion", prevyear_spi = spi_values_new_rounded)
+data.n <- rbind(data.n.cli, data.n.dli, data.n.leli)
+
+
+set.seed(1)
+boots <- 1000
+yest <- matrix(NA,nrow(data.n),ncol=boots)
+for(i in 1:boots){
+  ynew <- unlist(simulate(allsp50_overlap_annual_beta))
+  ymod <- update(allsp50_overlap_annual_beta,ynew ~ .)
+  RE.sd <- sqrt(VarCorr(ymod)$cond$dyad_id[1]) 
+  yest[,i] <- 1/ (1+exp(-(predict(ymod, re.form = ~0, newdata = data.n) + rnorm(1,0,RE.sd))))
+}
+
+#this will give me the mean and the confidence intervals for each of my input variable levels 
+mean_pred_overlap50_beta_annual <- apply(yest,1,mean)
+pred_overlap50_beta_annual <- cbind(data.n, mean_pred_overlap50_beta_annual)
+CIs_pred_overlap50_beta_annual <- apply(yest,1,function(x){quantile(x,probs=c(0.025,0.975))})
+
+
+
+```
+
+
+## Diagnostic plots for overlap models
+
+```{r DHARMa plots 3-month SPI}
+
+#overlap of 95% home ranges
+
+#Bernoulli model
+allsp95_overlap_3month_binom_simres <- simulateResiduals(allsp95_overlap_3month_binom)
+plot(allsp95_overlap_3month_binom_simres)
+
+#Beta model
+allsp95_overlap_3month_beta_simres <- simulateResiduals(allsp95_overlap_3month_beta)
+plot(allsp95_overlap_3month_beta_simres)
+
+
+
+#overlap of 50% home ranges
+
+#Bernoulli model
+allsp50_overlap_3month_binom_simres <- simulateResiduals(allsp50_overlap_3month_binom)
+plot(allsp50_overlap_3month_binom_simres)
+
+#Beta model
+allsp95_overlap_3month_beta_simres <- simulateResiduals(allsp95_overlap_3month_beta)
+plot(allsp95_overlap_3month_beta_simres)
+
+```
+
+
+```{r DHARMa plots annual SPI}
+
+#overlap of 95% home ranges
+
+#Bernoulli model
+allsp95_overlap_annual_binom_simres <- simulateResiduals(allsp95_overlap_annual_binom)
+plot(allsp95_overlap_annual_binom_simres)
+
+#Beta model
+allsp95_overlap_annual_beta_simres <- simulateResiduals(allsp95_overlap_annual_beta)
+plot(allsp95_overlap_annual_beta_simres)
+
+
+
+#overlap of 50% home ranges
+
+#Bernoulli model
+allsp50_overlap_annual_binom_simres <- simulateResiduals(allsp50_overlap_annual_binom)
+plot(allsp50_overlap_annual_binom_simres)
+
+#Beta model
+allsp50_overlap_annual_beta_simres <- simulateResiduals(allsp50_overlap_annual_beta)
+plot(allsp50_overlap_annual_beta_simres)
+
+```
+
+
+## Test for temporal autocorrelation in overlap models
+
+```{r acf() function for 3-month and annual overlap models}
+
+acf(resid(allsp95_overlap_annual_binom))
+acf(resid(allsp95_overlap_annual_beta))
+acf(resid(allsp50_overlap_annual_binom))
+acf(resid(allsp50_overlap_annual_beta))
+
+acf(resid(allsp95_overlap_3month_binom))
+acf(resid(allsp95_overlap_3month_beta))
+acf(resid(allsp50_overlap_3month_binom))
+acf(resid(allsp50_overlap_3month_beta))
+
+
+```
+
+
+## Calculate percent change in predicted overlap across most extreme observed SPI values
+
+Percent change between home range sizes at the 25th and 75th SPI percentiles.
+
+25th percentile SPI value = -0.5
+75th percentile SPI value = 1
+
+```{r percent change in beta overlap models with significant results}
+
+#Cheetah-Lion
+
+cheetahlion_overlap_annual_predictions <- subset(pred_overlap95_beta_annual, dyad_species == "Cheetah-Lion")
+
+twentyfive_percentile_cheetahlion_overlap_annual_predictions <- subset(cheetahlion_overlap_annual_predictions, prevyear_spi == -0.5)
+#0.2072713
+
+seventyfive_percentile_cheetahlion_overlap_annual_predictions <- subset(cheetahlion_overlap_annual_predictions, prevyear_spi == 1)
+#0.09476242
+
+#Percent change 
+(twentyfive_percentile_cheetahlion_overlap_annual_predictions[,2] - seventyfive_percentile_cheetahlion_overlap_annual_predictions[,2])/seventyfive_percentile_cheetahlion_overlap_annual_predictions[,2]*100
+#118.7273
+
+
+#Leopard-Lion
+
+leopardlion_overlap_annual_predictions <- subset(pred_overlap50_beta_annual, dyad_species == "Leopard-Lion")
+
+twentyfive_percentile_leopardlion_overlap_annual_predictions <- subset(leopardlion_overlap_annual_predictions, prevyear_spi == -0.5)
+#0.1093595
+
+seventyfive_percentile_leopardlion_overlap_annual_predictions <- subset(leopardlion_overlap_annual_predictions, prevyear_spi == 1)
+#0.06144436
+
+#Percent change dog 95
+(twentyfive_percentile_leopardlion_overlap_annual_predictions[,2] - seventyfive_percentile_leopardlion_overlap_annual_predictions[,2])/seventyfive_percentile_leopardlion_overlap_annual_predictions[,2]*100
+#77.98135
+
+
+```
+
+
+## Calculate predicted overlap coefficient at SPI = 0 ('average' conditions) for significant results
+
+```{r beta overlap during average conditions}
+
+#Cheetah-Lion dog annual SPI beta
+
+cheetahlion_overlap_avg_conditions <- subset(cheetahlion_overlap_annual_predictions, prevyear_spi == 0)
+
+
+#Lion-Leopard annual SPI beta
+
+
+leopardlion_overlap_avg_conditions <- subset(leopardlion_overlap_annual_predictions, prevyear_spi == 0)
+
+```
+
+
+## Encounter models
+
+Number of encounters per year-month is the repsonse, with SPI and species dyad nested within spi as fixed effects, and individual-level dyad id as a random effect.
+
+```{r 200m encounter radius models}
+
+encounters_mod_3month_200m <- glmmTMB(number_encounters ~ dyad_species + threemonth_spi:dyad_species + (1|dyad_id), data=encounters_200m, family = truncated_poisson(link = "log"))
+summary(encounters_mod_3month_200m)
+
+encounters_mod_annual_200m <- glmmTMB(number_encounters ~ dyad_species + prevyear_spi:dyad_species + (1|dyad_id), data=encounters_200m, family = truncated_poisson(link = "log"))
+summary(encounters_mod_annual_200m)
+
+```
+
+
+```{r 400m encounter radius models}
+
+encounters_mod_3month_400m <- glmmTMB(number_encounters ~ dyad_species + threemonth_spi:dyad_species + (1|dyad_id), data=encounters_400m, family = truncated_poisson(link = "log"))
+summary(encounters_mod_3month_400m)
+
+encounters_mod_annual_400m <- glmmTMB(number_encounters ~ dyad_species + prevyear_spi:dyad_species + (1|dyad_id), data=encounters_400m, family = truncated_poisson(link = "log"))
+summary(encounters_mod_annual_400m)
+
+```
+
+
+## Bootstrap confidence intervals for each encounter model
+
+```{r Bootstrap CIs 200m encounters}
+
+#Encounters 3month 
+#A 'while loop' is used instead of a 'for loop' in order to exclude model runs with convergence errors
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,8,nb) 
+i <- 1
+while (i <= nb) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(encounters_mod_3month_200m)) 
+    bmod <- update(encounters_mod_3month_200m, ynew ~ .)  
+    coefmat[,i] <- summary(bmod)$coefficients$cond[,1] 
+    i <- i + 1  # Only increment i if the iteration is successful
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])  #Not sure what row names would be here
+coefmat <- data.frame(coefmat)
+CIs_3month_encounter200 <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#Encounters annual
+#A 'while loop' is used instead of a 'for loop' in order to exclude model runs with convergence and optimization errors
+
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,8,nb) 
+i <- 1
+while (i <= nb) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(encounters_mod_annual_200m)) 
+    bmod <- update(encounters_mod_annual_200m, ynew ~ .)  
+    coefmat[,i] <- summary(bmod)$coefficients$cond[,1] 
+    i <- i + 1  # Only increment i if the iteration is successful
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])  #Not sure what row names would be here
+coefmat <- data.frame(coefmat)
+CIs_annual_encounter200 <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+``` 
+
+
+```{r Bootstrap CIs 400m encounters}
+
+#Encounters 3month 
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,8,nb) 
+i <- 1
+while (i <= nb) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(encounters_mod_3month_400m)) 
+    bmod <- update(encounters_mod_3month_400m, ynew ~ .)  
+    coefmat[,i] <- summary(bmod)$coefficients$cond[,1] 
+    i <- i + 1  # Only increment i if the iteration is successful
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])  #Not sure what row names would be here
+coefmat <- data.frame(coefmat)
+CIs_3month_encounter400 <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+#Encounters annual
+#A 'while loop' is used instead of a 'for loop' in order to exclude model runs with convergence and optimization errors
+
+set.seed(1)
+nb <- 1000
+coefmat <- matrix(NA,8,nb) 
+i <- 1
+while (i <= nb) {
+  result <- tryCatch({
+    ynew <- unlist(simulate(encounters_mod_annual_400m)) 
+    bmod <- update(encounters_mod_annual_400m, ynew ~ .)  
+    coefmat[,i] <- summary(bmod)$coefficients$cond[,1] 
+    i <- i + 1  # Only increment i if the iteration is successful
+  }, warning = function(w) {
+    cat("Warning in iteration", i, ":", w$message, "\n")
+    # Skip this iteration
+  }, error = function(e) {
+    cat("Error in iteration", i, ":", e$message, "\n")
+    # Skip this iteration
+  })
+
+  if (inherits(result, "try-error")) {
+    cat("Excluding iteration", i, "due to error or NAs\n")
+  }
+}
+
+rownames(coefmat) <- names(summary(bmod)$coefficients$cond[,1])  #Not sure what row names would be here
+coefmat <- data.frame(coefmat)
+CIs_annual_encounter400 <- t(apply(coefmat,1,function(x){quantile(x,probs=c(0.025,0.975))}))
+
+
+
+``` 
+
+
+## Diagnostic plots for encounter models
+
+```{r DHARMa plots encounters}
+
+#200m
+
+#Three month
+encounters_mod_3month_200m_simres <- simulateResiduals(encounters_mod_3month_200m)
+plot(encounters_mod_3month_200m_simres)
+
+
+#Annual
+encounters_mod_annual_200m_simres <- simulateResiduals(encounters_mod_annual_200m)
+plot(encounters_mod_annual_200m_simres)
+
+
+#400m
+
+#Three month
+encounters_mod_3month_400m_simres <- simulateResiduals(encounters_mod_3month_400m)
+plot(encounters_mod_3month_200m_simres)
+
+
+#Annual
+encounters_mod_annual_400m_simres <- simulateResiduals(encounters_mod_annual_400m)
+plot(encounters_mod_annual_200m_simres)
+
+```
+
+
+## Test for temporal autocorrelation in encounter models
+
+```{r acf() function for encounter models}
+
+acf(resid(encounters_mod_3month_200m))
+acf(resid(encounters_mod_annual_200m))
+
+acf(resid(encounters_mod_3month_400m))
+acf(resid(encounters_mod_annual_400m))
+
+```
+
+
+
+## Figures
+
+## Home Range
+
+```{r three month spi model predictions}
+
+####Wild Dog####
+
+####95% home range####
+
+#Reformatting dataframes with predictions and bootstrap CIs on predictions. 
+
+pred_dog95_3month_figure <- CIs_pred_dog95_3month %>%
+  t() %>%
+  as.data.frame() %>%
+  cbind(pred_dog95_3month) %>%
+  dplyr::select(x = "threemonth_spi", predicted = "mean_pred_dog95_3month", conf.low = "2.5%", conf.high = "97.5%") 
+
+#Plot bounds (min and max of observed data)
+
+data_figure <- df_HR %>%
+  subset(Species=="African Wild Dog" & isopleth=="BB95") 
+
+data_figure_min <-  min(data_figure$threemonth_spi) #-0.94
+data_figure_max <-  max(data_figure$threemonth_spi) #1.19
+
+#Plot
+
+ggplot() +
+  geom_line(data = pred_dog95_3month_figure, aes(x = x, y = predicted), size = 1, color = "darkturquoise") +
+  xlab("Standard Precipitation Index") +
+  ylab("Home Range Size in km squared (model predictions)") +
+  ggtitle("Wild dog 95% home range size as a function of 3-month SPI") +
+  theme_classic() +
+  theme(text = element_text(size = 10)) +
+  geom_ribbon(data = pred_dog95_3month_figure, aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high), fill = "lightblue", alpha = 0.2) +
+  geom_point(data=subset(df_HR, Species=="African Wild Dog" & isopleth=="BB95"), aes(x=threemonth_spi, y=hr_area), color = "black", size = 1) +
+  scale_x_continuous(limits = c(-1, 1.2)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 700))
+
+
+
+####50% home range####
+
+#Reformatting dataframes with predictions and bootstrap CIs on predictions. 
+
+pred_dog50_3month_figure <- CIs_pred_dog50_3month %>%
+  t() %>%
+  as.data.frame() %>%
+  cbind(pred_dog50_3month) %>%
+  dplyr::select(x = "threemonth_spi", predicted = "mean_pred_dog50_3month", conf.low = "2.5%", conf.high = "97.5%") 
+
+#Plot bounds (min and max of observed data)
+
+data_figure <- df_HR %>%
+  subset(Species=="African Wild Dog" & isopleth=="BB50") 
+
+data_figure_min <-  min(data_figure$threemonth_spi)
+data_figure_max <-  max(data_figure$threemonth_spi)
+
+#Plot
+ggplot() +
+  geom_line(data = pred_dog50_3month_figure, aes(x = x, y = predicted), size = 1, color = "darkturquoise") +
+  xlab("Standard Precipitation Index") +
+  ylab("Home Range Size in km squared (model predictions)") +
+  ggtitle("Wild dog 50% home range size as a function of 3-month SPI") +
+  theme_classic() +
+  theme(text = element_text(size = 10)) +
+  geom_ribbon(data = pred_dog50_3month_figure, aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high), fill = "lightblue", alpha = 0.2) +
+  geom_point(data=subset(df_HR, Species=="African Wild Dog" & isopleth=="BB50"), aes(x=threemonth_spi, y=hr_area), color = "black", size = 1) +
+  scale_x_continuous(limits = c(-1, 1.2)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 100))
+
+
+```
+
+
+```{r annual SPI model predictions}
+
+####Lion####
+
+####95% home range####
+
+#Reformatting dataframes with predictions and bootstrap CIs on predictions. Making separate columns for male and female predictions so can plot separately.
+
+pred_lion95_annual_wide <- pred_lion95_annual %>% 
+  pivot_wider(
+    names_from = "Sex",
+    values_from = "mean_pred_lion95_annual"
+  ) 
+  
+CI_labels <- c(rep("M",30),rep("F",30))
+  
+CIs_all <- CIs_pred_lion95_annual %>%
+  t() %>%
+  as.data.frame() %>%
+  mutate(CI_labels)
+
+CIs_male <- CIs_all %>%
+  subset(CI_labels == "M") %>%
+  dplyr::select("2.5%_m" = "2.5%", "97.5%_m" = "97.5%")
+  
+CIs_female <- CIs_all %>%
+  subset(CI_labels == "F") %>%
+  dplyr::select("2.5%_f" = "2.5%", "97.5%_f" = "97.5%")
+
+CIs_all_mf <- cbind(CIs_male, CIs_female)
+
+pred_lion95_annual_figure <- CIs_all_mf %>%
+  cbind(pred_lion95_annual_wide) %>%
+  dplyr::select(x = "prevyear_spi", predicted.m = "M", predicted.f = "F", conf.low.m = "2.5%_m", conf.high.m = "97.5%_m", conf.low.f = "2.5%_f", conf.high.f = "97.5%_f") 
+
+#Plot bounds (min and max of observed data)
+
+data_figure <- df_HR %>%
+  subset(Species=="Lion" & isopleth=="BB95") 
+
+data_figure_min <-  min(data_figure$prevyear_spi) #-0.66
+data_figure_max <-  max(data_figure$prevyear_spi) #1.37
+
+#Plot
+ggplot() +
+  geom_line(data = pred_lion95_annual_figure, aes(x = x, y = predicted.m), size = 1, color = "peru") +
+  geom_line(data = pred_lion95_annual_figure, aes(x = x, y = predicted.f), size = 1, color = "black") +
+  xlab("Standard Precipitation Index") +
+  ylab("Home Range Size in km squared (model predictions)") +
+  ggtitle("Lion 95% home range size as a function of annual SPI") +
+  theme_classic() +
+  theme(text = element_text(size = 10)) +
+  geom_ribbon(data = pred_lion95_annual_figure, aes(x = x, y = predicted.m, ymin = conf.low.m, ymax = conf.high.m), fill = "goldenrod", alpha = 0.2) +
+  geom_ribbon(data = pred_lion95_annual_figure, aes(x = x, y = predicted.f, ymin = conf.low.f, ymax = conf.high.f), fill = "grey", alpha = 0.2) +
+  geom_point(data=subset(df_HR, Species=="Lion" & isopleth=="BB95" & Sex == "M"), aes(x=prevyear_spi, y=hr_area), color = "black", size = 1) +
+  geom_point(data=subset(df_HR, Species=="Lion" & isopleth=="BB95" & Sex == "F"), aes(x=prevyear_spi, y=hr_area), color = "black", size = 1) +
+  scale_x_continuous(limits = c(-0.7, 1.4)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 350))
+
+
+####50% home range####
+
+#Reformatting dataframes with predictions and bootstrap CIs on predictions. Making separate columns for male and female predictions so can plot separately.
+
+pred_lion50_annual_wide <- pred_lion50_annual %>% 
+  pivot_wider(
+    names_from = "Sex",
+    values_from = "mean_pred_lion50_annual"
+  ) 
+
+CI_labels <- c(rep("M",30),rep("F",30))
+
+CIs_all <- CIs_pred_lion50_annual %>%
+  t() %>%
+  as.data.frame() %>%
+  mutate(CI_labels)
+
+CIs_male <- CIs_all %>%
+  subset(CI_labels == "M") %>%
+  dplyr::select("2.5%_m" = "2.5%", "97.5%_m" = "97.5%")
+
+CIs_female <- CIs_all %>%
+  subset(CI_labels == "F") %>%
+  dplyr::select("2.5%_f" = "2.5%", "97.5%_f" = "97.5%")
+
+CIs_all_mf <- cbind(CIs_male, CIs_female)
+
+pred_lion50_annual_figure <- CIs_all_mf %>%
+  cbind(pred_lion50_annual_wide) %>%
+  dplyr::select(x = "prevyear_spi", predicted.m = "M", predicted.f = "F", conf.low.m = "2.5%_m", conf.high.m = "97.5%_m", conf.low.f = "2.5%_f", conf.high.f = "97.5%_f") 
+
+#Plot bounds (min and max of observed data)
+
+data_figure <- df_HR %>%
+  subset(Species=="Lion" & isopleth=="BB50") 
+
+data_figure_min <-  min(data_figure$prevyear_spi) #-0.66
+data_figure_max <-  max(data_figure$prevyear_spi) #1.37
+
+#Plot
+ggplot() +
+  geom_line(data = pred_lion50_annual_figure, aes(x = x, y = predicted.m), size = 1, color = "peru") +
+  geom_line(data = pred_lion50_annual_figure, aes(x = x, y = predicted.f), size = 1, color = "black") +
+  xlab("Standard Precipitation Index") +
+  ylab("Home Range Size in km squared (model predictions)") +
+  ggtitle("Lion 50% home range size as a function of annual SPI") +
+  theme_classic() +
+  theme(text = element_text(size = 10)) +
+  geom_ribbon(data = pred_lion50_annual_figure, aes(x = x, y = predicted.m, ymin = conf.low.m, ymax = conf.high.m), fill = "goldenrod", alpha = 0.2) +
+  geom_ribbon(data = pred_lion50_annual_figure, aes(x = x, y = predicted.f, ymin = conf.low.f, ymax = conf.high.f), fill = "grey", alpha = 0.2) +
+  geom_point(data=subset(df_HR, Species=="Lion" & isopleth=="BB50" & Sex == "M"), aes(x=prevyear_spi, y=hr_area), color = "black", size = 1) +
+  geom_point(data=subset(df_HR, Species=="Lion" & isopleth=="BB50" & Sex == "F"), aes(x=prevyear_spi, y=hr_area), color = "black", size = 1) +
+  scale_x_continuous(limits = c(-0.7, 1.4)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 50))
+
+
+####Leopard####
+
+####95% home range####
+
+#Reformatting dataframes with predictions and bootstrap CIs on predictions. 
+
+pred_leopard95_annual_figure <- CIs_pred_leopard95_annual %>%
+  t() %>%
+  as.data.frame() %>%
+  cbind(pred_leopard95_annual) %>%
+  dplyr::select(x = "prevyear_spi", predicted = "mean_pred_leopard95_annual", conf.low = "2.5%", conf.high = "97.5%") 
+
+#Plot bounds (min and max of observed data)
+
+data_figure <- df_HR %>%
+  subset(Species=="Leopard" & isopleth=="BB95") 
+
+data_figure_min <-  min(data_figure$prevyear_spi) #-0.49
+data_figure_max <-  max(data_figure$prevyear_spi) #1.37
+
+#Plot
+ggplot() +
+  geom_line(data = pred_leopard95_annual_figure, aes(x = x, y = predicted), size = 1, color = "darkgreen") +
+  xlab("Standard Precipitation Index") +
+  ylab("Home Range Size in km squared (model predictions)") +
+  ggtitle("Leopard 95% home range size as a function of annual SPI") +
+  theme_classic() +
+  theme(text = element_text(size = 10)) +
+  geom_ribbon(data = pred_leopard95_annual_figure, aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high), fill = "darkseagreen", alpha = 0.2) +
+  geom_point(data=subset(df_HR, Species=="Leopard" & isopleth=="BB95"), aes(x=prevyear_spi, y=hr_area), color = "black", size = 1) +
+  scale_x_continuous(limits = c(-0.5, 1.4)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 200))
+
+
+
+####50% home range####
+
+#Reformatting dataframes with predictions and bootstrap CIs on predictions. 
+
+pred_leopard50_annual_figure <- CIs_pred_leopard50_annual %>%
+  t() %>%
+  as.data.frame() %>%
+  cbind(pred_leopard50_annual) %>%
+  dplyr::select(x = "prevyear_spi", predicted = "mean_pred_leopard50_annual", conf.low = "2.5%", conf.high = "97.5%") 
+
+#Plot bounds (min and max of observed data)
+data_figure <- df_HR %>%
+  subset(Species=="Leopard" & isopleth=="BB50") 
+
+data_figure_min <-  min(data_figure$prevyear_spi)
+data_figure_max <-  max(data_figure$prevyear_spi)
+
+#Plot 
+ggplot() +
+  geom_line(data = pred_leopard50_annual_figure, aes(x = x, y = predicted), size = 1, color = "darkgreen") +
+  xlab("Standard Precipitation Index") +
+  ylab("Home Range Size in km squared (model predictions)") +
+  ggtitle("Leopard 50% home range size as a function of annual SPI") +
+  theme_classic() +
+  theme(text = element_text(size = 10)) +
+  geom_ribbon(data = pred_leopard50_annual_figure, aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high), fill = "darkseagreen", alpha = 0.2) +
+  geom_point(data=subset(df_HR, Species=="Leopard" & isopleth=="BB50"), aes(x=prevyear_spi, y=hr_area), color = "black", size = 1) +
+  scale_x_continuous(limits = c(-0.5, 1.4)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 40))
+
+
+```
+
+
+## Overlap
+
+```{r beta plots depicting amount of overlap}
+
+####95% overlap annual beta####
+
+#Reformatting dataframes with predictions and bootstrap CIs on predictions. 
+
+CIs_pred_overlap95_beta_annual_figure <- CIs_pred_overlap95_beta_annual %>%
+  t() %>%
+  as.data.frame() %>%
+  cbind(pred_overlap95_beta_annual) %>%
+  dplyr::select(dyad_species, x = "prevyear_spi", predicted = "mean_pred_overlap95_beta_annual", conf.low = "2.5%", conf.high = "97.5%") 
+
+#Plot bounds (min and max of observed data)
+data_figure <- overlap_95_beta %>%
+  subset(dyad_species=="Cheetah-Lion") 
+
+data_figure_min <-  min(data_figure$prevyear_spi) #-0.66
+data_figure_max <-  max(data_figure$prevyear_spi) #0.16
+
+#Plot
+ggplot() +
+  geom_line(data = subset(CIs_pred_overlap95_beta_annual_figure, dyad_species == "Cheetah-Lion"), aes(x = x, y = predicted, color = dyad_species), size = 1) +
+  xlab("Standard Precipitation Index") +
+  ylab("Overlap coefficient (model predictions)") +
+  ggtitle("Cheetah-Lion 95% home range overlap as a function of annual SPI (beta)") +
+  theme_classic() +
+  geom_ribbon(data = subset(CIs_pred_overlap95_beta_annual_figure, dyad_species == "Cheetah-Lion"), aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, group = dyad_species), fill = "grey", alpha = 0.2) +
+  theme(text = element_text(size = 10)) + 
+  scale_color_brewer(palette="Set2") +
+  geom_point(data=subset(overlap_95_beta, dyad_species=="Cheetah-Lion"), aes(x=prevyear_spi, y=overlap), color = "black", size = 1) +
+  scale_x_continuous(limits = c(-0.7, 0.25)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 0.55))
+
+
+####50% overlap annual beta####
+
+#Reformatting dataframes with predictions and bootstrap CIs on predictions. 
+
+CIs_pred_overlap50_beta_annual_figure <- CIs_pred_overlap50_beta_annual %>%
+  t() %>%
+  as.data.frame() %>%
+  cbind(pred_overlap50_beta_annual) %>%
+  dplyr::select(dyad_species, x = "prevyear_spi", predicted = "mean_pred_overlap50_beta_annual", conf.low = "2.5%", conf.high = "97.5%") 
+
+#Plot bounds (min and max of observed data)
+
+data_figure <- overlap_50_beta %>%
+  subset(dyad_species=="Leopard-Lion") 
+
+data_figure_min <-  min(data_figure$prevyear_spi) #-0.49
+data_figure_max <-  max(data_figure$prevyear_spi) #1.37
+
+#Plot
+ggplot() +
+  geom_line(data = subset(CIs_pred_overlap50_beta_annual_figure, dyad_species == "Leopard-Lion"), aes(x = x, y = predicted, color = dyad_species), size = 1) +
+  xlab("Standard Precipitation Index") +
+  ylab("Overlap coefficient (model predictions)") +
+  ggtitle("Leopard-Lion 50% home range overlap as a function of annual SPI (beta)") +
+  theme_classic() +
+  geom_ribbon(data = subset(CIs_pred_overlap50_beta_annual_figure, dyad_species == "Leopard-Lion"), aes(x = x, y = predicted, ymin = conf.low, ymax = conf.high, group = dyad_species), fill = "grey", alpha = 0.2) +
+  theme(text = element_text(size = 10)) + 
+  scale_color_brewer(palette="Set2") +
+  geom_point(data=subset(overlap_50_beta, dyad_species=="Leopard-Lion"), aes(x=prevyear_spi, y=overlap), color = "black", size = 1) +
+  scale_x_continuous(limits = c(-0.5, 1.5)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 0.25))
+
+```
